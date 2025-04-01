@@ -1,0 +1,12 @@
+Flask>=2.2
+Flask-Cors>=3.0
+qiskit>=1.0.2
+qiskit-aer>=0.13
+qiskit-ibm-provider>=0.10 # Check latest compatible version for Qiskit 1.x
+qiskit-ibm-runtime>=0.30
+qiskit_algorithms>=0.2.1 # Check latest compatible version for Qiskit 1.x
+numpy>=1.21
+matplotlib>=3.7
+python-dotenv>=0.20
+scikit-learn>=1.1
+# requests # If needed for other API calls later

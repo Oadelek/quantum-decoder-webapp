@@ -45,7 +45,7 @@ class Config:
     NUM_SYNDROME_SAMPLES_EVAL: int = 100
 
     # --- Backend Selection ---
-    DEFAULT_BACKEND_MODE: str = 'ibm_real_device' # 'aer_simulator', 'simulator_stabilizer', 'ibm_simulator', 'ibm_real_device'
+    DEFAULT_BACKEND_MODE: str = 'aer_simulator' # 'aer_simulator', 'simulator_stabilizer', 'ibm_simulator', 'ibm_real_device'
     IBM_API_TOKEN: str | None = os.getenv("IBM_API_TOKEN")
     IBM_INSTANCE: str | None = os.getenv("IBM_INSTANCE", "ibm-q/open/main") # Default instance
     IBM_TARGET_BACKEND: str | None = os.getenv("IBM_TARGET_BACKEND") # e.g., "ibm_brisbane", "simulator_stabilizer"

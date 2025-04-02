@@ -39,7 +39,7 @@ test_config_overrides = {
     "SHOTS": 128,
     "EVAL_SHOTS": 256,
     "SEED": 12345,
-    "USE_LEAST_BUSY_BACKEND": True  # Enable least busy backend selection
+    "USE_LEAST_BUSY_BACKEND": True  
 }
 
 # --- Main Test Execution ---

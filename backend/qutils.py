@@ -1,4 +1,3 @@
-# backend/qutils.py
 import logging
 import math
 import numpy as np
@@ -6,7 +5,6 @@ from typing import Union # For type hints like Optional
 from config import settings # Import the global settings instance
 
 # --- Utility Functions for Labeling ---
-
 def error_map_to_class_label(error_map: dict, data_qubit_indices_list: list[int]) -> int:
     """Converts an error map (e.g., {data_idx: 'X'}) to a class label."""
     if not error_map:
@@ -96,7 +94,6 @@ def measurement_to_class_label(counts: dict, num_vqc_qubits: int, num_classes: i
     return predicted_label
 
 # --- Data Conversion for Classical ML ---
-
 def syndrome_str_to_feature_vector(syndrome_str: str) -> np.ndarray:
     """Converts a syndrome bitstring ('0110...') into a NumPy array of floats."""
     try:
@@ -105,7 +102,7 @@ def syndrome_str_to_feature_vector(syndrome_str: str) -> np.ndarray:
         num_stabilizers = settings.NUM_ANCILLA_QUBITS # For d=3, 8 stabilizers
         if len(features) != num_stabilizers:
              logging.warning(f"Syndrome string length {len(features)} does not match expected stabilizers {num_stabilizers}. Padding/truncating may occur implicitly later.")
-             # Optionally pad/truncate here if needed, but better to fix generation
+             # We could optionally pad/truncate here if needed, but better to fix generation
         return features
     except ValueError as e:
         logging.error(f"Error converting syndrome string '{syndrome_str}' to feature vector: {e}")

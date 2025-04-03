@@ -46,7 +46,7 @@ class Config:
     MAX_EXECUTION_TIME: int = 300 
 
     # --- Backend Selection ---
-    DEFAULT_BACKEND_MODE: str = 'aer_simulator' # 'aer_simulator', 'simulator_stabilizer', 'ibm_simulator', 'ibm_real_device'
+    DEFAULT_BACKEND_MODE: str = 'ibm_real_device' # 'aer_simulator', 'simulator_stabilizer', 'ibm_simulator', 'ibm_real_device'
     DEFAULT_IBM_BACKEND:str = "ibm_brisbane" 
 
     IBM_API_TOKEN: str | None = os.getenv("IBM_API_TOKEN")

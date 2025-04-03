@@ -43,13 +43,19 @@ class Config:
     EPSILON: float = 1e-9 # Small value for numerical stability (e.g., log(0))
     NUM_SYNDROME_SAMPLES_TRAIN: int = 200
     NUM_SYNDROME_SAMPLES_EVAL: int = 100
+    MAX_EXECUTION_TIME: int = 300 
 
     # --- Backend Selection ---
     DEFAULT_BACKEND_MODE: str = 'aer_simulator' # 'aer_simulator', 'simulator_stabilizer', 'ibm_simulator', 'ibm_real_device'
+    DEFAULT_IBM_BACKEND:str = "ibm_brisbane" 
+
     IBM_API_TOKEN: str | None = os.getenv("IBM_API_TOKEN")
     IBM_INSTANCE: str | None = os.getenv("IBM_INSTANCE", "ibm-q/open/main") # Default instance
     IBM_TARGET_BACKEND: str | None = os.getenv("IBM_TARGET_BACKEND") # e.g., "ibm_brisbane", "simulator_stabilizer"
     USE_LEAST_BUSY_BACKEND: bool = True # Enable dynamic selection of the least busy backend
+
+    
+       
 
     def __init__(self, **kwargs):
         """Initialize and validate config, allowing overrides from kwargs."""

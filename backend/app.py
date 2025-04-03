@@ -207,7 +207,6 @@ def get_job_results(job_id):
 @app.route('/api/example_circuit/<arch_type>', methods=['GET'])
 def get_example_circuit_image(arch_type):
     """Generates and returns an image of an example initial VQC circuit."""
-    # ... (Implementation from previous app.py - verified) ...
     logging.info(f"GET /api/example_circuit/{arch_type}")
     circuit = None; img_data_base64 = None
     try:

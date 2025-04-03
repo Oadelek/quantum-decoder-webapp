@@ -78,7 +78,7 @@ def get_backend(force_reload=False) -> BackendV2:
             _backend_instance = AerSimulator()
             logging.info(f"Initialized AerSimulator.")
         elif mode == 'simulator_stabilizer':
-            # Note: Stabilizer simulator might not support all noise models or operations
+            # Note: Stabilizer simulator might not be able to support all noise models or operations
             _backend_instance = AerSimulator(method='stabilizer')
             logging.info(f"Initialized AerSimulator (stabilizer method).")
         elif mode in ['ibm_simulator', 'ibm_real_device']:
@@ -120,7 +120,7 @@ def get_backend(force_reload=False) -> BackendV2:
                     print("simulator?? ", is_simulator)
                     least_busy_backend = _qiskit_runtime_service.least_busy(
                         operational=True,
-                        simulator=False,
+                        simulator=is_simulator,
                         min_num_qubits=min_req_qubits
                     )
                     _backend_instance = least_busy_backend
@@ -151,6 +151,7 @@ def get_backend(force_reload=False) -> BackendV2:
                     logging.info(f"Successfully obtained backend: {_backend_instance.name} (Simulator: {_backend_instance.simulator}, Max Circuits: {_backend_instance.max_circuits})")
 
                     # Warning if mode mismatches backend type
+                    # Likely wont
                     if mode == 'ibm_real_device' and _backend_instance.simulator:
                         logging.warning(f"Target backend '{target}' is a simulator, but mode is 'ibm_real_device'.")
                     elif mode == 'ibm_simulator' and not _backend_instance.simulator:
@@ -326,15 +327,14 @@ def generate_labeled_syndrome_data(num_samples: int, data_q_list: list, ancilla_
                                    noise_model: NoiseModel | None) -> list[tuple[str, int]]:
     """Generates labeled syndrome data (noisy_syndrome_str, error_class_label). Uses AerSimulator directly."""
     dataset = []
-    # Use AerSimulator directly for data generation, it's much faster.
+    # Use AerSimulator directly for data generation as it's much faster.
     # Apply noise model if provided.
     sim_backend_options = {}
     if noise_model:
         # Stabilizer method might not support full noise model; default method usually needed.
         # Check if noise model has instructions not supported by stabilizer sim
         requires_density_matrix = any(isinstance(err, (ReadoutError)) for q_errs in noise_model._local_quantum_errors.values() for err in q_errs) or \
-                                  noise_model._local_readout_errors or noise_model._global_readout_error or \
-                                  noise_model._local_kraus_operators or noise_model._global_kraus_operator
+                                  noise_model._local_readout_errors 
 
         if requires_density_matrix:
              sim_backend = AerSimulator(**sim_backend_options) # Default method handles noise
@@ -446,7 +446,7 @@ def generate_labeled_syndrome_data(num_samples: int, data_q_list: list, ancilla_
             # Process results for the batch
             for j, pub_result in enumerate(results_batch):
                  # Access data for the j-th circuit in the batch
-                 counts = pub_result.data.syndrome.get_counts()
+                 counts = pub_result.data.syndrome.get_counts()   # we use synndrome here because that is the name of the classical register
                  if not counts:
                      logging.warning(f"Sample attempt (original index ~{i+j}) got no counts. Skipping.")
                      continue
@@ -571,7 +571,7 @@ def cost_function_decoder(params: np.ndarray, circuit_template: QuantumCircuit,
         return -math.log(settings.EPSILON) * 100
 
     try:
-        # Transpilation using Preset Pass Manager (Correct for Qiskit 1.x)
+        # Transpilation using Preset Pass Manager (Correct for Qiskit 1.3.1 but may break with change in version(beware of Qiskit!))
         logging.debug(f"Transpiling circuit '{bound_circuit.name}' for backend '{backend.name}' in cost function.")
         pm = generate_preset_pass_manager(backend=backend, optimization_level=1) # Opt level 1 is usually good balance
         isa_circuit = pm.run(bound_circuit)
@@ -598,7 +598,7 @@ def cost_function_decoder(params: np.ndarray, circuit_template: QuantumCircuit,
 
         # Extract counts from the first (and only) PubResult
         pub_result = result[0]
-        counts = pub_result.data.c.get_counts()
+        counts = pub_result.data.c.get_counts()      # We use c here because that is the name of the classical register
         logging.debug(f"Counts obtained: {counts}")
 
 
@@ -918,8 +918,17 @@ def evaluate_decoder(trained_params: np.ndarray, circuit_creator_func: callable,
     logging.info(f"  Correct predictions: {correct_predictions}")
     logging.info(f"  Accuracy (Correct / Successfully Processed): {accuracy:.4f}")
 
-
     return accuracy, final_results_detail
+
+def get_initial_params(circuit_params: list[Parameter]) -> np.ndarray:
+    """Generates random initial parameters (angles) for a VQC."""
+    num_params = len(circuit_params)
+    if num_params == 0:
+        return np.array([])
+    # Initialize parameters typically between -pi and pi or 0 and 2pi for rotational gates
+    initial_values = np.random.uniform(-np.pi, np.pi, num_params)
+    logging.debug(f"Generated {num_params} initial random parameters.")
+    return initial_values
 
 def create_classical_models() -> dict:
     """Returns a dictionary of configured scikit-learn models."""
@@ -1014,7 +1023,6 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
         setup_info['backend_mode_used'] = current_settings.DEFAULT_BACKEND_MODE
         logging.info(f"Using backend: {backend.name} (Mode: {current_settings.DEFAULT_BACKEND_MODE})")
 
-
         # Initialize surface code parameters
         # Ensure these use current_settings if they were overridable (they aren't directly here)
         lattice, qpus, data_q_list, ancilla_q_list, qubit_indices, qpu_assignment_map = initialize_d3_surface_code()
@@ -1069,6 +1077,7 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
     start_data_time = time.time()
     training_data = []
     evaluation_data = []
+
     try:
         data_qubit_indices_list = sorted([qubit_indices[q] for q in data_q_list]) # Needed for label mapping
         setup_info['data_qubit_indices_list'] = data_qubit_indices_list # Store for reference
@@ -1120,7 +1129,6 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
         setup_info['classical_data_prepared'] = False
         # Continue with VQNNs, but classical models will be skipped
 
-
     # --- Model Definitions ---
     model_definitions = {
          "centralized_vqnn": {"creator": lambda syndrome: create_centralized_vqc(syndrome), "config_qubits": current_settings.CENTRALIZED_VQC_QUBITS, "type": "vqnn"},
@@ -1141,7 +1149,6 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
         except Exception as e:
              logging.error(f"Failed to create classical model instances: {e}", exc_info=True)
              setup_info['classical_data_prepared'] = False # Mark as failed if instances couldn't be made
-
 
     # --- Training and Evaluation Loop ---
     for arch_name, definition in model_definitions.items():
@@ -1275,7 +1282,6 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
 
                     arch_results[clean_arch_name]['params'] = opt_p.tolist() # Store as list
                     arch_results[clean_arch_name]['training_history'] = hist
-
 
             elif model_type == 'classical':
                 # --- Classical Model Training ---
@@ -1422,7 +1428,7 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
                  arch_results[clean_arch_name]['accuracy'] = float(accuracy) # Ensure float type
                  arch_results[clean_arch_name]['status'] = 'Complete'
                  if eval_details is not None:
-                      # Store eval details (can be large, consider limiting size or saving separately)
+                      # Store eval details (can be large,we might consider limiting size or saving separately)
                       # Convert numpy arrays/objects in details to JSON serializable types if necessary
                       try:
                            # Attempt basic JSON serialization check/conversion
@@ -1431,11 +1437,9 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
                            elif isinstance(eval_details, list) and eval_details:
                                 # Check elements within the list if it's complex
                                 if isinstance(eval_details[0], dict):
-                                     # Example: Convert numpy ints/floats in counts dicts
                                      for item in eval_details:
                                           if 'counts' in item and isinstance(item['counts'], dict):
                                                item['counts'] = {k: int(v) for k, v in item['counts'].items()}
-                                          # Add more conversions as needed
                            # Limit size if too large
                            MAX_DETAILS_LEN = 500 # Store details for first N samples only
                            if isinstance(eval_details, list) and len(eval_details) > MAX_DETAILS_LEN:
@@ -1446,8 +1450,6 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
                       except Exception as json_err:
                            logging.warning(f"Could not make eval_details JSON serializable for {clean_arch_name}: {json_err}. Skipping details storage.")
                            arch_results[clean_arch_name]['eval_details'] = "Error serializing details"
-
-
             else:
                  # Should not happen if evaluation functions return accuracy or raise error
                  logging.error(f"Evaluation accuracy for {clean_arch_name} resulted in None unexpectedly.")
@@ -1465,7 +1467,6 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
             arch_results[clean_arch_name]['error'] = str(error_msg)
             exec_times['evaluation'][clean_arch_name] = time.time() - start_eval_time
             # Continue to the next architecture
-
 
     # --- Baseline Calculation ---
     base_name = 'baseline_predict_identity'
@@ -1538,18 +1539,6 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
     return results
 
 
-def get_initial_params(circuit_params: list[Parameter]) -> np.ndarray:
-    """Generates random initial parameters (angles) for a VQC."""
-    num_params = len(circuit_params)
-    if num_params == 0:
-        return np.array([])
-    # Initialize parameters typically between -pi and pi or 0 and 2pi for rotational gates
-    initial_values = np.random.uniform(-np.pi, np.pi, num_params)
-    logging.debug(f"Generated {num_params} initial random parameters.")
-    return initial_values
-
-
-
 # --- Optional: Main execution block for testing this file directly ---
 if __name__ == '__main__':
     # Configure logging for direct script execution
@@ -1594,8 +1583,7 @@ if __name__ == '__main__':
         logging.error(f"Error during basic backend test: {e}", exc_info=True)
 
 
-    # Example: Test running the full experiment (using test config)
-    # This would be similar to your test script, but integrated here
+    # Sample test: Test running the full experiment (using test config)
     # logging.info("\n--- Testing run_decoder_experiment_instance ---")
     # test_config_exp = {
     #     "NUM_SYNDROME_SAMPLES_TRAIN": 10,

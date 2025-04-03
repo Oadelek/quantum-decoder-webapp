@@ -1,4 +1,3 @@
-# backend/visualization_gen.py
 import matplotlib
 matplotlib.use('Agg') # Use non-interactive backend for server
 import matplotlib.pyplot as plt

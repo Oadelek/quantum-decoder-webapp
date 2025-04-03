@@ -585,7 +585,7 @@ def cost_function_decoder(params: np.ndarray, circuit_template: QuantumCircuit,
         if isinstance(backend, AerSimulator) and settings.SEED is not None:
             # Using a fixed seed per cost evaluation might be okay, or vary it slightly
             # Let's use a base seed for reproducibility within an optimization step
-            current_seed = settings.SEED # Or add hash(params.tobytes()) etc. if needed
+            current_seed = settings.SEED # Or add hash(params.tobytes()) etc. if necessary
             backend.set_options(seed_simulator=current_seed)
             logging.debug(f"Set AerSimulator seed to {current_seed} for cost evaluation.")
 
@@ -660,7 +660,7 @@ def train_vqnn_supervised(circuit_template: QuantumCircuit, initial_params: np.n
         batch_size = min(len(training_data), 32) # Or use a config setting
         if batch_size == 0:
             logging.warning("Objective function called with empty training data.")
-            #return 0.0 # Or raise error? Returning 0 might stall optimizer. Let's return high cost.
+            #return 0.0 # Or raise error? Returning 0 might stall optimizer. I will return high cost.
             return -math.log(settings.EPSILON) * 100
 
         # Sample a batch of data points
@@ -1055,7 +1055,6 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
             setup_info['noise_model_enabled'] = False # Noise comes from backend
             logging.info("Noise model not applicable (using IBM backend or non-Aer sim).")
 
-
         # Get stabilizers
         stabilizers_x, stabilizers_z = get_d3_stabilizers(qubit_indices)
         setup_info['num_x_stabilizers'] = len(stabilizers_x)
@@ -1082,7 +1081,7 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
         data_qubit_indices_list = sorted([qubit_indices[q] for q in data_q_list]) # Needed for label mapping
         setup_info['data_qubit_indices_list'] = data_qubit_indices_list # Store for reference
 
-        # Generate data using AerSimulator (as implemented in the modified function)
+        # Generate data using AerSimulator
         logging.info("Generating training data...")
         training_data = generate_labeled_syndrome_data(
             current_settings.NUM_SYNDROME_SAMPLES_TRAIN,

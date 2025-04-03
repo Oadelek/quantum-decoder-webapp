@@ -176,9 +176,6 @@ if __name__ == "__main__":
         logging.info("Proceeding with IBM hardware evaluation...")
         try:
             eval_start_time = time()
-            # It might be necessary to pass trained parameters if the function expects them
-            # Check if run_decoder_experiment_instance reuses state or needs parameters explicitly
-            # e.g., results_ibm = run_decoder_experiment_instance(config_override=ibm_eval_config, initial_params=trained_params)
             results_ibm = run_decoder_experiment_instance(config_override=ibm_eval_config)
             eval_elapsed = time() - eval_start_time
             logging.info(f"IBM evaluation attempt finished in {eval_elapsed:.2f}s") # Log time regardless of success

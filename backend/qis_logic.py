@@ -7,7 +7,7 @@ import copy
 import warnings
 from typing import Union, Any # For type hints
 import json
-from config import settings, Config # with the assumption that config is in the same dir or PYTHONPATH
+from config import settings, Config 
 
 # Qiskit imports
 from qiskit import QuantumCircuit, transpile, ClassicalRegister
@@ -319,6 +319,9 @@ def inject_single_pauli_error(circuit: QuantumCircuit, data_qubit_indices: list[
         elif pauli_type == 'Y': circuit.y(target_qubit_idx)
         elif pauli_type == 'Z': circuit.z(target_qubit_idx)
         injected_errors[target_qubit_idx] = pauli_type
+        # print(f"Injecting {pauli_type} on qubit {target_qubit_idx}")
+        # input("stopping after injection")
+
     return circuit, injected_errors
 
 def generate_labeled_syndrome_data(num_samples: int, data_q_list: list, ancilla_q_list: list,
@@ -330,12 +333,13 @@ def generate_labeled_syndrome_data(num_samples: int, data_q_list: list, ancilla_
     # Use AerSimulator directly for data generation as it's much faster.
     # Apply noise model if provided.
     sim_backend_options = {}
+
     if noise_model:
         # Stabilizer method might not support full noise model; default method usually needed.
         # Check if noise model has instructions not supported by stabilizer sim
         requires_density_matrix = any(isinstance(err, (ReadoutError)) for q_errs in noise_model._local_quantum_errors.values() for err in q_errs) or \
                                   noise_model._local_readout_errors 
-
+ 
         if requires_density_matrix:
              sim_backend = AerSimulator(**sim_backend_options) # Default method handles noise
              logging.info("Using AerSimulator (default method) for data generation due to noise model.")
@@ -350,7 +354,6 @@ def generate_labeled_syndrome_data(num_samples: int, data_q_list: list, ancilla_
                 sim_backend = AerSimulator(**sim_backend_options)
                 sim_backend.set_options(noise_model=noise_model)
                 logging.info("Fallback to AerSimulator (default method) for data gen with noise.")
-
     else:
         sim_backend = AerSimulator(method='stabilizer', **sim_backend_options) # No noise, stabilizer is fast
         logging.info("Using AerSimulator (stabilizer method) for data generation (no noise).")
@@ -374,6 +377,8 @@ def generate_labeled_syndrome_data(num_samples: int, data_q_list: list, ancilla_
     target_labels = []
     seed_values = [] # Store seeds per circuit if needed
 
+    # print(f"target labels: {target_labels}  length of target labels: {len(target_labels)}")
+    # print(f"generated_count {generated_count} num_samples: {num_samples} attempts: {attempts} max_attempts: {max_attempts}")
     # Prepare all circuits first
     prep_start_time = time.time()
     while generated_count < num_samples and attempts < max_attempts:
@@ -383,7 +388,11 @@ def generate_labeled_syndrome_data(num_samples: int, data_q_list: list, ancilla_
         qc_run.add_register(cr)
 
         qc_run, injected_errors_map = inject_single_pauli_error(qc_run, data_qubit_indices_list, settings.INJECTED_ERROR_PROB_OVERALL)
+        
+        print(f"injected errors map: {injected_errors_map},data_qubit_indices_list {data_qubit_indices_list} ")
         error_class_label = error_map_to_class_label(injected_errors_map, data_qubit_indices_list)
+        print(f"error class label: {error_class_label}")
+        input("rahhhhhh")
 
         qc_run.barrier(label="Error")
         qc_run = apply_stabilizer_measurements(qc_run, stabilizers_x, 'X', 0)
@@ -394,6 +403,8 @@ def generate_labeled_syndrome_data(num_samples: int, data_q_list: list, ancilla_
             # Transpile here before adding to list
             isa_circuit = pm.run(qc_run)
             circuits_to_run.append(isa_circuit)
+            #print("circuits to run is given: ", isa_circuit)
+            #input("stopping after inpjut")
             target_labels.append(error_class_label)
             if settings.SEED is not None:
                 # Generate a unique seed for each simulation run
@@ -412,15 +423,19 @@ def generate_labeled_syndrome_data(num_samples: int, data_q_list: list, ancilla_
     if not circuits_to_run:
         logging.error("No circuits were successfully prepared for data generation.")
         return []
+    
+    print(f"generated_count {generated_count} num_samples: {num_samples} attempts: {attempts} max_attempts: {max_attempts}")
+    print(f"target labels: {target_labels}  length of target labels: {len(target_labels)} length of circuit {len(circuits_to_run)}")
+    input("PAUSEDDDD")
 
     # Run simulations in batches if many circuits
-    batch_size = 500 # Adjust batch size based on memory/performance
+    total_circuits = len(circuits_to_run)
+    batch_size = min(500, total_circuits)  # Adjust batch size based on memory/performance
     run_start_time = time.time()
     for i in range(0, len(circuits_to_run), batch_size):
         batch_circuits = circuits_to_run[i:i+batch_size]
         batch_labels = target_labels[i:i+batch_size]
         batch_seeds = seed_values[i:i+batch_size] if seed_values else []
-
         logging.info(f" Running batch {i//batch_size + 1}/{(len(circuits_to_run) + batch_size - 1)//batch_size} (size {len(batch_circuits)})...")
 
         try:
@@ -428,13 +443,13 @@ def generate_labeled_syndrome_data(num_samples: int, data_q_list: list, ancilla_
 
             # Set seed for the batch if applicable
             if isinstance(sim_backend, AerSimulator) and settings.SEED is not None and batch_seeds:
-                 # Qiskit Aer Sampler takes seed in run options now
-                 # Using a single seed for the batch run might be sufficient for Aer's handling
-                 # Or pass per-circuit seeds if the interface supports it (check specific Aer version)
-                 # Let's try setting a base seed for the batch run via options
+                # Qiskit Aer Sampler takes seed in run options now
+                # Using a single seed for the batch run might be sufficient for Aer's handling
+                # Or pass per-circuit seeds if the interface supports it (check specific Aer version)
+                # Let's try setting a base seed for the batch run via options
 
-                 sim_backend.set_options(seed_simulator=batch_seeds[0]) # Set seed for the backend instance
-                 logging.debug(f"Set AerSimulator seed to {batch_seeds[0]} for batch.")
+                sim_backend.set_options(seed_simulator=batch_seeds[0]) # Set seed for the backend instance
+                logging.debug(f"Set AerSimulator seed to {batch_seeds[0]} for batch.")
 
 
             # Run the batch of circuits
@@ -454,6 +469,13 @@ def generate_labeled_syndrome_data(num_samples: int, data_q_list: list, ancilla_
                  # Assuming the key is the measurement outcome '0bxxxx' or 'xxxx'
                  # Let's take the first (and only, for shots=1) outcome
                  syndrome_key_bin = list(counts.keys())[0]
+
+                 print(f"syndrome {syndrome_key_bin}")
+                 print(f"num of stabilizers {num_stabilizers}")
+                 print(f"batch label: {batch_labels[j]}")
+                 input("Paused. Press Enter to continue...")
+
+
                  # Remove potential '0b' prefix if present
                  if syndrome_key_bin.startswith('0b'):
                        syndrome_key = syndrome_key_bin[2:]
@@ -462,17 +484,8 @@ def generate_labeled_syndrome_data(num_samples: int, data_q_list: list, ancilla_
 
                  # Pad with leading zeros if necessary
                  syndrome_key_padded = syndrome_key.zfill(num_stabilizers)
-
-                 # Reverse the string? Stabilizer measurement order vs classical register bit order.
-                 # If ClassicalRegister bit 0 corresponds to first measurement, and Qiskit orders MSB left (standard binary),
-                 # then reversal might be needed depending on how apply_stabilizer_measurements mapped ancillas to clbits.
-                 # Let's assume the order in apply_stabilizer_measurements (0..num_X-1, num_X..num_total-1) matches the desired syndrome order LSB->MSB.
-                 # Qiskit measurement result strings usually have qubit N-1 on the left, qubit 0 on the right.
-                 # If cr[0] is first measurement, it's the rightmost bit.
-                 # So, the string from counts is likely already in the correct order (most significant bit = last measurement). No reversal needed.
                  noisy_syndrome_str = syndrome_key_padded
                  dataset.append((noisy_syndrome_str, batch_labels[j]))
-
         except Exception as e:
             logging.error(f"Simulation batch failed (starting index {i}): {e}", exc_info=True)
 
@@ -491,8 +504,8 @@ def add_syndrome_encoding(circuit: QuantumCircuit, syndrome_str: str) -> Quantum
     if num_encode_qubits < len(syndrome_bits):
         logging.debug(f"Syndrome len ({len(syndrome_bits)}) > VQC encoding qubits ({num_encode_qubits}). Truncating.")
     for i in range(num_encode_qubits):
-        angle = np.pi * syndrome_bits[i]
-        if angle != 0: circuit.ry(angle, i)
+         angle = np.pi * syndrome_bits[i]
+         if angle != 0: circuit.ry(angle, i)
     return circuit
 
 def create_vqc_ansatz(num_qubits: int, reps: int, entanglement: str = 'linear') -> EfficientSU2:
@@ -589,7 +602,6 @@ def cost_function_decoder(params: np.ndarray, circuit_template: QuantumCircuit,
             backend.set_options(seed_simulator=current_seed)
             logging.debug(f"Set AerSimulator seed to {current_seed} for cost evaluation.")
 
-
         # Execute using SamplerV2
         logging.debug(f"Running SamplerV2 job for cost function (Shots: {shots})...")
         job = sampler.run([isa_circuit], **run_options) # Pass circuit as a list
@@ -600,8 +612,6 @@ def cost_function_decoder(params: np.ndarray, circuit_template: QuantumCircuit,
         pub_result = result[0]
         counts = pub_result.data.c.get_counts()      # We use c here because that is the name of the classical register
         logging.debug(f"Counts obtained: {counts}")
-
-
     except Exception as e:
         logging.error(f"Error during circuit execution/transpilation in cost function "
                       f"(Label {target_label}, Target {target_bitstring}, Backend {backend.name}): {e}", exc_info=True)
@@ -968,9 +978,16 @@ def evaluate_classical_model(model_name: str, model, evaluation_features: np.nda
         logging.error(f"Error evaluating classical model {model_name}: {e}", exc_info=True)
         return None, time.time() - start_eval_time, None
 
-def run_decoder_experiment_instance(config_override: dict | None = None, training_callback=None) -> dict:
-    """Runs the full decoder training and evaluation pipeline.
-       Uses SamplerV2 compatible functions.
+
+def run_decoder_experiment_instance(config_override: dict | None = None, training_callback=None) -> tuple[dict, dict]:
+    """
+    Runs the full decoder training and evaluation pipeline.
+    Uses SamplerV2 compatible functions.
+
+    Returns:
+        tuple: (results_dict, setup_details_dict)
+               results_dict contains performance metrics and training outputs.
+               setup_details_dict contains static info like lattice, qubit maps, etc., for visualization.
     """
     # --- Configuration Setup ---
     effective_config = copy.deepcopy(settings) # Start with default settings
@@ -1001,17 +1018,29 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
     loggable_config = {k: v for k, v in vars(current_settings).items() if k != 'IBM_API_TOKEN' and not k.startswith('_')}
     logging.info(f"Effective Run Configuration:\n{json.dumps(loggable_config, indent=2)}")
 
-    # --- Results Structure ---
+    # --- Results & Setup Details Structure ---
     results = {
         'architectures': {},
         'execution_times': {'overall': 0, 'setup': 0, 'data_gen': 0, 'training': {}, 'evaluation': {}},
-        'setup_info': {'config_used': loggable_config},
+        'setup_info': {'config_used': loggable_config}, # Basic info stored directly in results
         'error': None,
         'summary': {}
     }
+    setup_details = { # New dictionary for visualization-related setup info
+        'lattice_data': None,
+        'qpus': None,
+        'qubit_indices': None,
+        'data_q_list': None,
+        'ancilla_q_list': None,
+        'stabilizers_x': None,
+        'stabilizers_z': None,
+        'data_qubit_indices_list': None, # Canonical list of data qubit indices
+        'vqc_templates': {}, # To store example VQC circuits for plotting
+        'classical_model_defs': {} # Store definitions like layer sizes
+    }
     arch_results = results['architectures']
     exec_times = results['execution_times']
-    setup_info = results['setup_info']
+    setup_info = results['setup_info'] # Keep basic info here
 
     # --- Setup Phase ---
     start_setup_time = time.time()
@@ -1023,21 +1052,26 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
         setup_info['backend_mode_used'] = current_settings.DEFAULT_BACKEND_MODE
         logging.info(f"Using backend: {backend.name} (Mode: {current_settings.DEFAULT_BACKEND_MODE})")
 
-        # Initialize surface code parameters
+        # Initialize surface code parameters and store in setup_details
         # Ensure these use current_settings if they were overridable (they aren't directly here)
         lattice, qpus, data_q_list, ancilla_q_list, qubit_indices, qpu_assignment_map = initialize_d3_surface_code()
         num_total_qubits = len(qubit_indices)
-        setup_info.update({
-            'code_distance': current_settings.CODE_DISTANCE,
-            'num_data_qubits': len(data_q_list),
-            'num_ancilla_qubits': len(ancilla_q_list),
-            'num_total_qubits': num_total_qubits,
-            'num_error_classes': current_settings.NUM_ERROR_CLASSES,
-            'min_vqc_qubits_needed': current_settings.MIN_VQC_QUBITS_NEEDED,
-            'lattice_qubits': list(lattice.values()),
-            'qpu_assignments_list': qpus, # List of lists of qubit names per QPU
-             'qubit_indices_map': qubit_indices, # Map 'D0'->0 etc.
+        setup_details.update({
+            'lattice_data': lattice,
+            'qpus': qpus,
+            'qubit_indices': qubit_indices,
+            'data_q_list': data_q_list,
+            'ancilla_q_list': ancilla_q_list,
              'qpu_assignment_map_idx': qpu_assignment_map # Map qubit_idx -> qpu_idx
+        })
+        # Also store some basic info in results['setup_info'] for quick viewing
+        setup_info.update({
+             'code_distance': current_settings.CODE_DISTANCE,
+             'num_data_qubits': len(data_q_list),
+             'num_ancilla_qubits': len(ancilla_q_list),
+             'num_total_qubits': num_total_qubits,
+             'num_error_classes': current_settings.NUM_ERROR_CLASSES,
+             'min_vqc_qubits_needed': current_settings.MIN_VQC_QUBITS_NEEDED,
         })
 
         # Get noise model ONLY if using Aer simulator (real backends have inherent noise)
@@ -1057,12 +1091,15 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
 
         # Get stabilizers
         stabilizers_x, stabilizers_z = get_d3_stabilizers(qubit_indices)
+        setup_details.update({ # Store stabilizers for potential use
+            'stabilizers_x': stabilizers_x,
+            'stabilizers_z': stabilizers_z,
+        })
         setup_info['num_x_stabilizers'] = len(stabilizers_x)
         setup_info['num_z_stabilizers'] = len(stabilizers_z)
 
         exec_times['setup'] = time.time() - start_setup_time
         logging.info(f"Setup phase complete ({exec_times['setup']:.2f}s)")
-
     except Exception as e:
         exec_times['setup'] = time.time() - start_setup_time
         error_msg = f"Setup failed: {e}"
@@ -1070,7 +1107,8 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
         logging.error(error_msg, exc_info=True)
         # Add backend name if it was successfully fetched before error
         if backend: results['setup_info']['backend_name'] = backend.name
-        return results # Critical setup failed, cannot continue
+        # Return both dictionaries, even on error, with error flagged in results
+        return results, setup_details # Critical setup failed, cannot continue
 
     # --- Data Generation Phase ---
     start_data_time = time.time()
@@ -1078,8 +1116,9 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
     evaluation_data = []
 
     try:
+        # Ensure data_qubit_indices_list is generated and stored
         data_qubit_indices_list = sorted([qubit_indices[q] for q in data_q_list]) # Needed for label mapping
-        setup_info['data_qubit_indices_list'] = data_qubit_indices_list # Store for reference
+        setup_details['data_qubit_indices_list'] = data_qubit_indices_list # Store for reference
 
         # Generate data using AerSimulator
         logging.info("Generating training data...")
@@ -1110,7 +1149,7 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
         error_msg = f"Data generation failed: {e}"
         results['error'] = error_msg
         logging.error(error_msg, exc_info=True)
-        return results # Cannot proceed without data
+        return results, setup_details # Cannot proceed without data
 
 
     # --- Prepare Data for Classical Models ---
@@ -1128,50 +1167,79 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
         setup_info['classical_data_prepared'] = False
         # Continue with VQNNs, but classical models will be skipped
 
-    # --- Model Definitions ---
+    # --- Model Definitions & Template Generation ---
+    # Define creators first
+    # Dummy syndrome string needed for template creation
+    num_stabilizers = len(stabilizers_x) + len(stabilizers_z)
+    dummy_syndrome = '0' * num_stabilizers
+
+    def _create_centralized_template():
+        try: return create_centralized_vqc(dummy_syndrome)[0] # Return only circuit
+        except Exception: logging.error("Failed to create centralized template", exc_info=True); return None
+    def _create_global_template():
+        try: return create_global_vqc(dummy_syndrome)[0]
+        except Exception: logging.error("Failed to create global template", exc_info=True); return None
+    def _create_local_template(qpu_idx=0): # Create template for first QPU
+        try: return create_local_vqc(qpus[qpu_idx], dummy_syndrome, qpu_idx, qubit_indices)[0]
+        except Exception: logging.error(f"Failed to create local template qpu={qpu_idx}", exc_info=True); return None
+
+
     model_definitions = {
-         "centralized_vqnn": {"creator": lambda syndrome: create_centralized_vqc(syndrome), "config_qubits": current_settings.CENTRALIZED_VQC_QUBITS, "type": "vqnn"},
-         "distributed_vqnn": {"creator": lambda syndrome: create_global_vqc(syndrome), "config_qubits": current_settings.GLOBAL_VQC_QUBITS, "type": "vqnn"},
-         "localized_vqnn": {"is_local": True, "config_qubits": current_settings.LOCAL_VQC_QUBITS_PER_QPU, "type": "vqnn"},
+         "centralized_vqnn": {"creator": create_centralized_vqc, "config_qubits": current_settings.CENTRALIZED_VQC_QUBITS, "type": "vqnn", "template": _create_centralized_template()},
+         "distributed_vqnn": {"creator": create_global_vqc, "config_qubits": current_settings.GLOBAL_VQC_QUBITS, "type": "vqnn", "template": _create_global_template()},
+         "localized_vqnn": {"is_local": True, "config_qubits": current_settings.LOCAL_VQC_QUBITS_PER_QPU, "type": "vqnn", "template": _create_local_template()}, # Template for QPU 0
          "classical_logreg": {"is_classical": True, "type": "classical"},
          "classical_mlp": {"is_classical": True, "type": "classical"},
          "baseline_predict_identity": {"is_baseline": True, "type": "baseline"}
      }
-    
-    # Add classical model instances if preparation succeeded
+
+    # Store templates in setup_details
+    for name, definition in model_definitions.items():
+        if 'template' in definition and definition['template'] is not None:
+             setup_details['vqc_templates'][name] = definition['template']
+             logging.info(f"Stored VQC template for: {name}")
+
+    # Add classical model instances and definitions if preparation succeeded
     trained_classical_models = {}
     if setup_info['classical_data_prepared']:
         try:
             classical_model_instances = create_classical_models()
             model_definitions['classical_logreg']['instance'] = classical_model_instances['classical_logreg']
             model_definitions['classical_mlp']['instance'] = classical_model_instances['classical_mlp']
+            # Store MLP definition for plotting
+            setup_details['classical_model_defs']['mlp'] = {
+                'hidden_layers': (64, 32), # Hardcoded in create_classical_models
+                'input_size': num_stabilizers,
+                'output_size': current_settings.NUM_ERROR_CLASSES
+            }
         except Exception as e:
-             logging.error(f"Failed to create classical model instances: {e}", exc_info=True)
+             logging.error(f"Failed to create/store classical model instances/defs: {e}", exc_info=True)
              setup_info['classical_data_prepared'] = False # Mark as failed if instances couldn't be made
+
 
     # --- Training and Evaluation Loop ---
     for arch_name, definition in model_definitions.items():
         model_type = definition['type']
         # Use a cleaner name for logging/reporting if desired
-        clean_arch_name = arch_name.replace('_vqnn', '').replace('_decoder', '')
+        clean_arch_name = arch_name.replace('_vqnn', '').replace('_decoder', '').replace('classical_','').replace('baseline_','') # Make name cleaner
         logging.info(f"\n--- Processing Architecture: {clean_arch_name} ({model_type}) ---")
 
         # Initialize results structure for this architecture
-        arch_results[clean_arch_name] = {
+        arch_results[arch_name] = { # Use original key here
             'params': None, 'accuracy': None, 'training_history': None,
             'status': 'Pending', 'error': None, 'eval_details': None, 'type': model_type
         }
-        exec_times['training'][clean_arch_name] = 0
-        exec_times['evaluation'][clean_arch_name] = 0
+        exec_times['training'][arch_name] = 0
+        exec_times['evaluation'][arch_name] = 0
 
         # --- Skip Conditions ---
         if definition.get("is_baseline"):
             logging.info(f"Skipping training/evaluation for baseline model '{clean_arch_name}'.")
-            arch_results[clean_arch_name]['status'] = 'Skipped (Baseline)'
+            arch_results[arch_name]['status'] = 'Skipped (Baseline)'
             continue # Baseline calculated later
 
         if definition.get("is_classical") and not setup_info['classical_data_prepared']:
-            arch_results[clean_arch_name]['status'] = 'Skipped (Classical Data Failed)'
+            arch_results[arch_name]['status'] = 'Skipped (Classical Data Failed)'
             logging.warning(f"Skipping classical model '{clean_arch_name}' due to classical data preparation failure.")
             continue
 
@@ -1180,21 +1248,21 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
             config_q = definition.get("config_qubits", 0) # Default to 0 if missing
             if config_q < min_q:
                 warn_msg = f"Config qubits ({config_q}) < min required ({min_q})."
-                arch_results[clean_arch_name]['status'] = 'Skipped (Insufficient Qubits)'
-                arch_results[clean_arch_name]['error'] = warn_msg
+                arch_results[arch_name]['status'] = 'Skipped (Insufficient Qubits)'
+                arch_results[arch_name]['error'] = warn_msg
                 logging.warning(f"Skipping VQNN '{clean_arch_name}': {warn_msg}")
                 continue
 
         # --- Training Phase ---
         start_train_time = time.time()
-        arch_results[clean_arch_name]['status'] = 'Training'
+        arch_results[arch_name]['status'] = 'Training'
         try:
             if model_type == 'vqnn':
                 # Define the callback for this specific VQNN training
                 def specific_training_callback(info):
                      if training_callback:
                          # Add architecture info before passing to the main callback
-                         info['arch'] = clean_arch_name
+                         info['arch'] = clean_arch_name # Use clean name for callback display
                          training_callback(info)
 
                 if definition.get("is_local", False):
@@ -1207,34 +1275,32 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
                     for qpu_idx, qpu_names in enumerate(qpus):
                         logging.info(f" Training Local VQNN for QPU {qpu_idx}...")
                         # Create a template circuit for this QPU to get parameter structure
-                        # Need a dummy syndrome string of the correct length
-                        num_stabilizers = setup_info['num_x_stabilizers'] + setup_info['num_z_stabilizers']
-                        dummy_s = '0' * num_stabilizers
                         try:
-                            tmpl_c, tmpl_p_list = create_local_vqc(qpu_names, dummy_s, qpu_idx, qubit_indices)
-                            logging.info(f"  QPU {qpu_idx}: Template circuit '{tmpl_c.name}' created with {len(tmpl_p_list)} parameters.")
+                            # Recreate specific template to ensure correct params list for THIS QPU
+                            local_tmpl_c, local_tmpl_p_list = create_local_vqc(qpu_names, dummy_syndrome, qpu_idx, qubit_indices)
+                            logging.info(f"  QPU {qpu_idx}: Template circuit '{local_tmpl_c.name}' created with {len(local_tmpl_p_list)} parameters.")
                         except Exception as local_create_err:
                              logging.error(f"  Failed to create local VQC template for QPU {qpu_idx}: {local_create_err}", exc_info=True)
                              raise RuntimeError(f"Local VQC creation failed for QPU {qpu_idx}") from local_create_err
 
-                        if not tmpl_p_list: # No parameters in the template
+                        if not local_tmpl_p_list: # No parameters in the template
                             logging.warning(f"  Local VQC for QPU {qpu_idx} has no parameters. Assigning empty params.")
                             opt_p, final_cost, hist = np.array([]), 0.0, {'cost': []}
                         else:
                             # Get initial parameters
-                            init_p = get_initial_params(tmpl_p_list)
+                            init_p = get_initial_params(local_tmpl_p_list)
                             logging.info(f"  QPU {qpu_idx}: Initial params shape {init_p.shape}")
 
                             # Define a more specific callback for local training progress
                             def local_progress_callback(info):
                                 if training_callback:
-                                    info['arch'] = clean_arch_name
+                                    info['arch'] = clean_arch_name # Use clean name
                                     info['detail'] = f"QPU {qpu_idx}"
                                     training_callback(info) # Pass enriched info
 
                             # Train this local VQNN
                             opt_p, final_cost, hist = train_vqnn_supervised(
-                                tmpl_c,
+                                local_tmpl_c,
                                 init_p,
                                 training_data, # Use full training data for each local model
                                 backend,       # Use the main backend
@@ -1247,22 +1313,29 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
                         history_list.append(hist) # Store history
 
                     # Store results for the overall localized architecture
-                    arch_results[clean_arch_name]['params'] = optimal_params_list
-                    arch_results[clean_arch_name]['training_history'] = history_list
+                    arch_results[arch_name]['params'] = optimal_params_list
+                    arch_results[arch_name]['training_history'] = history_list
 
                 else:
                     # --- Global / Centralized VQNN Training ---
                     logging.info(f"Training {clean_arch_name} VQNN...")
-                    creator = definition["creator"]
-                    num_stabilizers = setup_info['num_x_stabilizers'] + setup_info['num_z_stabilizers']
-                    dummy_s = '0' * num_stabilizers
-                    try:
-                         tmpl_c, tmpl_p_list = creator(dummy_s)
-                         logging.info(f" Template circuit '{tmpl_c.name}' created with {len(tmpl_p_list)} parameters.")
-                    except Exception as create_err:
-                        logging.error(f" Failed to create VQC template for {clean_arch_name}: {create_err}", exc_info=True)
-                        raise RuntimeError(f"VQC template creation failed for {clean_arch_name}") from create_err
+                    # Retrieve the template created earlier
+                    tmpl_c = definition.get('template')
+                    if tmpl_c is None:
+                         # Attempt to recreate if missing
+                         logging.warning(f"Template not found for {clean_arch_name}, attempting recreation.")
+                         creator = definition["creator"]
+                         try: tmpl_c, tmpl_p_list = creator(dummy_syndrome)
+                         except Exception as create_err:
+                             logging.error(f" Failed to create VQC template for {clean_arch_name}: {create_err}", exc_info=True)
+                             raise RuntimeError(f"VQC template creation failed for {clean_arch_name}") from create_err
+                         if tmpl_c is None: # Check again after recreation attempt
+                             raise RuntimeError(f"Failed to obtain template for {clean_arch_name}")
+                    else:
+                        # Get parameters from stored template if it exists
+                        tmpl_p_list = tmpl_c.parameters
 
+                    logging.info(f" Using template circuit '{tmpl_c.name}' with {len(tmpl_p_list)} parameters.")
 
                     if not tmpl_p_list: # No parameters
                         logging.warning(f" VQNN {clean_arch_name} has no parameters. Assigning empty params.")
@@ -1279,8 +1352,8 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
                         )
                         logging.info(f" Training complete for {clean_arch_name}. Final cost: {final_cost:.4f}")
 
-                    arch_results[clean_arch_name]['params'] = opt_p.tolist() # Store as list
-                    arch_results[clean_arch_name]['training_history'] = hist
+                    arch_results[arch_name]['params'] = opt_p.tolist() # Store as list
+                    arch_results[arch_name]['training_history'] = hist
 
             elif model_type == 'classical':
                 # --- Classical Model Training ---
@@ -1302,29 +1375,29 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
                     raise RuntimeError(f"Classical training function failed for {clean_arch_name}.")
 
                 # Store the trained model instance for evaluation
-                trained_classical_models[clean_arch_name] = trained_model
+                trained_classical_models[arch_name] = trained_model # Use original arch_name key
                 # Note: We don't store classical model parameters directly in results['params']
                 logging.info(f" Classical model {clean_arch_name} trained in {train_time_classical:.2f}s.")
 
 
             # Record training time and update status
-            exec_times['training'][clean_arch_name] = time.time() - start_train_time
-            arch_results[clean_arch_name]['status'] = 'Trained'
-            logging.info(f" Training phase complete for {clean_arch_name} ({exec_times['training'][clean_arch_name]:.2f}s)")
+            exec_times['training'][arch_name] = time.time() - start_train_time
+            arch_results[arch_name]['status'] = 'Trained'
+            logging.info(f" Training phase complete for {clean_arch_name} ({exec_times['training'][arch_name]:.2f}s)")
 
         except Exception as train_err:
             # Catch any error during the training block
             error_msg = f"Training failed for {clean_arch_name}: {train_err}"
             logging.error(f" {error_msg}", exc_info=True) # Log full traceback for training errors
-            arch_results[clean_arch_name]['status'] = 'Error (Training)'
-            arch_results[clean_arch_name]['error'] = str(error_msg) # Store simplified error message
-            exec_times['training'][clean_arch_name] = time.time() - start_train_time
+            arch_results[arch_name]['status'] = 'Error (Training)'
+            arch_results[arch_name]['error'] = str(error_msg) # Store simplified error message
+            exec_times['training'][arch_name] = time.time() - start_train_time
             continue # Skip evaluation if training failed
 
 
         # --- Evaluation Phase ---
         start_eval_time = time.time()
-        arch_results[clean_arch_name]['status'] = 'Evaluating'
+        arch_results[arch_name]['status'] = 'Evaluating'
         logging.info(f" Evaluating {clean_arch_name}...")
         try:
             accuracy = None
@@ -1336,7 +1409,7 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
                     accuracies_local = []
                     eval_details_local = [] # Collect details from each QPU eval if needed
                     num_qpus_local = len(qpus)
-                    all_qpu_params = arch_results[clean_arch_name].get('params', [])
+                    all_qpu_params = arch_results[arch_name].get('params', []) # Use original key
 
                     if len(all_qpu_params) != num_qpus_local:
                          raise RuntimeError(f"Mismatch between number of QPUs ({num_qpus_local}) and stored local params ({len(all_qpu_params)}) for {clean_arch_name}.")
@@ -1365,7 +1438,7 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
                          accuracies_local.append(acc)
                          # Store details with QPU index if needed later
                          # for d in details: d['qpu_index'] = qpu_idx
-                         # eval_details_local.extend(details)
+                         # eval_details_local.extend(details) # This could get large
 
 
                     # Calculate average accuracy across local QPUs
@@ -1376,15 +1449,21 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
                         accuracy = 0.0
                         logging.warning(" No local accuracies recorded for localized VQNN.")
                     # For simplicity, don't store combined eval_details for local VQNNs now
-                    eval_details = None # Or aggregate if needed
+                    eval_details = {"average_accuracy": accuracy, "individual_accuracies": accuracies_local} # Store summary
 
                 else:
                      # --- Global / Centralized VQNN Evaluation ---
-                     trained_params_np = np.array(arch_results[clean_arch_name].get('params', []))
-                     if trained_params_np.size == 0 and len(definition['creator']('0'*num_stabilizers)[1]) > 0 :
+                     trained_params_np = np.array(arch_results[arch_name].get('params', [])) # Use original key
+                     # Check parameter presence vs circuit needs
+                     template_circuit_check = definition.get('template')
+                     expected_params_count = len(template_circuit_check.parameters) if template_circuit_check else 0
+
+                     if trained_params_np.size == 0 and expected_params_count > 0:
                           # Handle case where params should exist but are empty
-                           logging.warning(f" Trained parameters for {clean_arch_name} are empty, but circuit requires parameters. Evaluation may fail.")
+                           logging.warning(f" Trained parameters for {clean_arch_name} are empty, but circuit requires {expected_params_count} parameters. Evaluation may fail or yield poor results.")
                            # Proceed, evaluate_decoder might handle empty params if circuit expects none.
+                     elif trained_params_np.size != expected_params_count:
+                          logging.warning(f"Parameter count mismatch during evaluation for {clean_arch_name}. Expected {expected_params_count}, got {trained_params_np.size}. Evaluation may fail.")
 
 
                      logging.info(f" Evaluating {clean_arch_name} VQNN (Params shape: {trained_params_np.shape})...")
@@ -1396,14 +1475,12 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
                          backend
                      )
                      logging.info(f" {clean_arch_name} evaluation complete. Accuracy: {accuracy:.4f}")
-
-
             elif model_type == 'classical':
                  # --- Classical Model Evaluation ---
                  if not setup_info['classical_data_prepared']:
                      raise RuntimeError(f"Cannot evaluate classical model {clean_arch_name}, data not available.")
 
-                 trained_model = trained_classical_models.get(clean_arch_name)
+                 trained_model = trained_classical_models.get(arch_name) # Use original key
                  if trained_model is None:
                       raise RuntimeError(f"Trained model instance not found for classical model {clean_arch_name} during evaluation.")
 
@@ -1424,56 +1501,76 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
 
             # --- Store Evaluation Results ---
             if accuracy is not None:
-                 arch_results[clean_arch_name]['accuracy'] = float(accuracy) # Ensure float type
-                 arch_results[clean_arch_name]['status'] = 'Complete'
+                 arch_results[arch_name]['accuracy'] = float(accuracy) # Ensure float type
+                 arch_results[arch_name]['status'] = 'Complete'
                  if eval_details is not None:
                       # Store eval details (can be large,we might consider limiting size or saving separately)
                       # Convert numpy arrays/objects in details to JSON serializable types if necessary
                       try:
                            # Attempt basic JSON serialization check/conversion
+                           processed_details = None
                            if isinstance(eval_details, np.ndarray):
-                                eval_details = eval_details.tolist()
+                               processed_details = eval_details.tolist()
                            elif isinstance(eval_details, list) and eval_details:
-                                # Check elements within the list if it's complex
-                                if isinstance(eval_details[0], dict):
-                                     for item in eval_details:
-                                          if 'counts' in item and isinstance(item['counts'], dict):
-                                               item['counts'] = {k: int(v) for k, v in item['counts'].items()}
+                               # Check elements within the list if it's complex (like list of dicts from VQNN)
+                               if isinstance(eval_details[0], dict):
+                                   processed_details = []
+                                   for item in eval_details:
+                                        serializable_item = {}
+                                        for k, v in item.items():
+                                            if isinstance(v, np.integer): serializable_item[k] = int(v)
+                                            elif isinstance(v, np.floating): serializable_item[k] = float(v)
+                                            elif isinstance(v, dict) and k == 'counts': # Special handle counts
+                                                serializable_item[k] = {bitstr: int(count) for bitstr, count in v.items()}
+                                            elif isinstance(v, (str, int, float, bool, list, dict, type(None))):
+                                                serializable_item[k] = v # Already serializable
+                                            else:
+                                                serializable_item[k] = str(v) # Fallback to string
+                                        processed_details.append(serializable_item)
+                               else: # Assume simple list (like classical predictions)
+                                   processed_details = eval_details # Already a list
+
+                           elif isinstance(eval_details, dict): # Handle dict case (e.g., local VQNN summary)
+                               processed_details = eval_details # Assume dict is serializable for now
+
                            # Limit size if too large
                            MAX_DETAILS_LEN = 500 # Store details for first N samples only
-                           if isinstance(eval_details, list) and len(eval_details) > MAX_DETAILS_LEN:
+                           if isinstance(processed_details, list) and len(processed_details) > MAX_DETAILS_LEN:
                                 logging.warning(f"Evaluation details for {clean_arch_name} truncated to first {MAX_DETAILS_LEN} entries.")
-                                eval_details = eval_details[:MAX_DETAILS_LEN]
+                                processed_details = processed_details[:MAX_DETAILS_LEN]
 
-                           arch_results[clean_arch_name]['eval_details'] = eval_details
+                           arch_results[arch_name]['eval_details'] = processed_details # Use original key
                       except Exception as json_err:
                            logging.warning(f"Could not make eval_details JSON serializable for {clean_arch_name}: {json_err}. Skipping details storage.")
-                           arch_results[clean_arch_name]['eval_details'] = "Error serializing details"
+                           arch_results[arch_name]['eval_details'] = "Error serializing details" # Use original key
             else:
                  # Should not happen if evaluation functions return accuracy or raise error
                  logging.error(f"Evaluation accuracy for {clean_arch_name} resulted in None unexpectedly.")
-                 raise RuntimeError(f"Evaluation function returned None accuracy for {clean_arch_name}.")
+                 arch_results[arch_name]['accuracy'] = None # Ensure it's None if evaluation fails softly
+                 # Keep status as 'Evaluating' or update based on error? Let error handler below catch it.
+                 # raise RuntimeError(f"Evaluation function returned None accuracy for {clean_arch_name}.") # Or maybe don't raise?
 
-            exec_times['evaluation'][clean_arch_name] = time.time() - start_eval_time
-            logging.info(f" Evaluation phase complete for {clean_arch_name} ({exec_times['evaluation'][clean_arch_name]:.2f}s). Accuracy: {arch_results[clean_arch_name]['accuracy']:.4f}")
-
-
+            exec_times['evaluation'][arch_name] = time.time() - start_eval_time
+            # Log accuracy if available, otherwise indicate issue
+            acc_log_str = f"{arch_results[arch_name]['accuracy']:.4f}" if arch_results[arch_name]['accuracy'] is not None else "N/A"
+            logging.info(f" Evaluation phase complete for {clean_arch_name} ({exec_times['evaluation'][arch_name]:.2f}s). Accuracy: {acc_log_str}")
         except Exception as eval_err:
             # Catch any error during the evaluation block
             error_msg = f"Evaluation failed for {clean_arch_name}: {eval_err}"
             logging.error(f" {error_msg}", exc_info=True) # Log full traceback for eval errors
-            arch_results[clean_arch_name]['status'] = 'Error (Evaluation)'
-            arch_results[clean_arch_name]['error'] = str(error_msg)
-            exec_times['evaluation'][clean_arch_name] = time.time() - start_eval_time
+            arch_results[arch_name]['status'] = 'Error (Evaluation)'
+            arch_results[arch_name]['error'] = str(error_msg)
+            arch_results[arch_name]['accuracy'] = None # Ensure accuracy is None on error
+            exec_times['evaluation'][arch_name] = time.time() - start_eval_time
             # Continue to the next architecture
 
     # --- Baseline Calculation ---
     base_name = 'baseline_predict_identity'
-    clean_base_name = base_name # Already clean
+    clean_base_name = base_name.replace('baseline_','') # Already clean
     logging.info(f"\n--- Calculating Baseline: {clean_base_name} ---")
-    arch_results[clean_base_name] = {'params': None, 'accuracy': None, 'training_history': None, 'status': 'Calculating', 'error': None, 'eval_details': None, 'type': 'baseline'}
-    exec_times['training'][clean_base_name] = 0
-    exec_times['evaluation'][clean_base_name] = 0
+    arch_results[base_name] = {'params': None, 'accuracy': None, 'training_history': None, 'status': 'Calculating', 'error': None, 'eval_details': None, 'type': 'baseline'} # Use original key
+    exec_times['training'][base_name] = 0
+    exec_times['evaluation'][base_name] = 0
 
     try:
         # Use the prepared evaluation labels (y_eval) if available
@@ -1493,8 +1590,8 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
                  identity_correct = sum(1 for label in eval_labels_for_baseline if label == 0)
 
             baseline_accuracy = identity_correct / num_eval_samples
-            arch_results[clean_base_name]['accuracy'] = float(baseline_accuracy)
-            arch_results[clean_base_name]['status'] = 'Complete'
+            arch_results[base_name]['accuracy'] = float(baseline_accuracy) # Use original key
+            arch_results[base_name]['status'] = 'Complete'
             logging.info(f" Baseline Accuracy (Predict Identity): {baseline_accuracy:.4f}")
         else:
             raise ValueError("No evaluation labels available for baseline calculation.")
@@ -1502,9 +1599,9 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
     except Exception as base_err:
         error_msg = f"Baseline calculation failed: {base_err}"
         logging.error(error_msg, exc_info=True)
-        arch_results[clean_base_name]['status'] = 'Error'
-        arch_results[clean_base_name]['error'] = error_msg
-        arch_results[clean_base_name]['accuracy'] = None
+        arch_results[base_name]['status'] = 'Error' # Use original key
+        arch_results[base_name]['error'] = error_msg
+        arch_results[base_name]['accuracy'] = None
 
 
     # --- Finalization ---
@@ -1513,12 +1610,15 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
 
     # --- Summary Generation ---
     results['summary'] = {}
+    # Iterate through original architecture keys used in results dict
     for name, data in arch_results.items():
-         results['summary'][name] = {
+         # Use the clean name only for the summary display key
+         clean_name_summary = name.replace('_vqnn', '').replace('_decoder', '').replace('classical_','').replace('baseline_','')
+         results['summary'][clean_name_summary] = { # Key is clean name here
              "status": data.get('status'),
              "accuracy": data.get('accuracy'), # Will be None if error or not calculated
-             "train_time": exec_times['training'].get(name),
-             "eval_time": exec_times['evaluation'].get(name),
+             "train_time": exec_times['training'].get(name), # Use original name to look up time
+             "eval_time": exec_times['evaluation'].get(name), # Use original name to look up time
              "type": data.get('type'),
              "error": data.get('error') # Will be None if no error
          }
@@ -1527,6 +1627,7 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
     logging.info("Final Summary:")
     logging.info(f"{'Architecture':<25} | {'Type':<10} | {'Status':<20} | {'Accuracy':<10} | {'Train (s)':<10} | {'Eval (s)':<10} | {'Error'}")
     logging.info("-" * 100)
+    # Sort summary by the clean display name for logging
     for name, summary_data in sorted(results['summary'].items()):
         acc_str = f"{summary_data.get('accuracy', 0.0):.4f}" if isinstance(summary_data.get('accuracy'), float) else 'N/A'
         train_t_str = f"{summary_data.get('train_time', 0.0):.2f}" if isinstance(summary_data.get('train_time'), float) else 'N/A'
@@ -1534,8 +1635,9 @@ def run_decoder_experiment_instance(config_override: dict | None = None, trainin
         error_str = summary_data.get('error') or ""
         logging.info(f"{name:<25} | {summary_data.get('type','N/A'):<10} | {summary_data.get('status','N/A'):<20} | {acc_str:<10} | {train_t_str:<10} | {eval_t_str:<10} | {error_str[:50]}") # Truncate long errors
 
-    # --- Return the comprehensive results dictionary ---
-    return results
+    # --- Return the comprehensive results dictionary AND the setup details dictionary ---
+    logging.info("Returning results and setup details dictionaries.")
+    return results, setup_details # MODIFIED RETURN VALUE
 
 
 # --- Optional: Main execution block for testing this file directly ---

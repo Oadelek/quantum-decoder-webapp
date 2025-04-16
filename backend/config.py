@@ -41,21 +41,21 @@ class Config:
     # --- Training Parameters ---
     SPSA_MAX_ITER: int = 50 # Max iterations for SPSA optimizer
     EPSILON: float = 1e-9 # Small value for numerical stability (e.g., log(0))
-    NUM_SYNDROME_SAMPLES_TRAIN: int = 200
+    NUM_SYNDROME_SAMPLES_TRAIN: int = 400
     NUM_SYNDROME_SAMPLES_EVAL: int = 100
-    MAX_EXECUTION_TIME: int = 300 
+    MAX_EXECUTION_TIME: int = 300
 
     # --- Backend Selection ---
     DEFAULT_BACKEND_MODE: str = 'aer_simulator' # 'aer_simulator', 'simulator_stabilizer', 'ibm_simulator', 'ibm_real_device'
-    DEFAULT_IBM_BACKEND:str = "ibm_brisbane" 
+    DEFAULT_IBM_BACKEND:str = "ibm_brisbane"
 
     IBM_API_TOKEN: str | None = os.getenv("IBM_API_TOKEN")
     IBM_INSTANCE: str | None = os.getenv("IBM_INSTANCE", "ibm-q/open/main") # Default instance
     IBM_TARGET_BACKEND: str | None = os.getenv("IBM_TARGET_BACKEND") # e.g., "ibm_brisbane", "simulator_stabilizer"
     USE_LEAST_BUSY_BACKEND: bool = True # Enable dynamic selection of the least busy backend
 
-    
-       
+    # --- Visualization ---
+    PLOTS_OUTPUT_DIR: str = "simulation_plots" # Directory to save generated plots
 
     def __init__(self, **kwargs):
         """Initialize and validate config, allowing overrides from kwargs."""
@@ -75,11 +75,13 @@ class Config:
                     if is_optional and value is None:
                         setattr(self, key, None)
                         continue
+                    # Handle different types, including the new PLOTS_OUTPUT_DIR
                     if attr_type and value is not None and not isinstance(value, attr_type):
                         if attr_type is int: value = int(value)
                         elif attr_type is float: value = float(value)
                         elif attr_type is bool: value = str(value).lower() in ['true', '1', 'yes']
                         elif attr_type is list[float]: value = [float(v) for v in value]
+                        elif attr_type is str: value = str(value) # Ensure string type for path
                         else:
                             print(f"Warning: Type mismatch for key '{key}'. Expected {attr_type}, got {type(value)}. Attempting to keep original value.")
                     setattr(self, key, value)
